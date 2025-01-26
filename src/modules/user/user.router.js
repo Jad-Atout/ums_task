@@ -1,4 +1,4 @@
-import {Router} from "express";
+import {response, Router} from "express";
 import userModel from "../../../db/model/user.model.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
@@ -24,6 +24,14 @@ router.post('/', async (request, response) => {
 })
 router.delete('/:id',async (request, response) => {
     const {id}=request.params;
+    const{token} = request.headers;
+
+    const decodedToken = jwt.verify(token,'JadAtout');
+
+    if(decodedToken.role !== 'admin'){
+        return response.status(403).json({message:"Unauthorized"});
+    }
+
     try {
         const user = await userModel.findByPk(id)
         if(user){
@@ -38,19 +46,5 @@ router.delete('/:id',async (request, response) => {
 
 })
 
-router.post('/login', async (request, response) => {
-    const {email, password} = request.body;
-    const user = await userModel.findOne({
-        where: {email: email},
-    })
-    if(user==null){
-        response.status(404).json({error:"invalid email"});
-    }
-    const check =  await bcrypt.compare(password, user.password);
-    if(check){
-        response.status(401).json({error: "Invalid password"});
-    }
-    const token = jwt.sign({name:user.name,email:user.email},'JadAtout')
-    return response.status(200).json({message:`successfully logged in`,token:token});
-})
+
 export default router;
