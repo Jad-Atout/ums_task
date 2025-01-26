@@ -4,10 +4,12 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 const router = Router();
 
-router.get('/',(request, response) => {
+router.get('/',async (request, response) => {
     let users = []
     try {
-         users = userModel.findAll()
+         users = await userModel.findAll({
+             attributes:['name','email']
+         })
     }catch (error) {
         response.status(500).json({error: error.message});
     }
@@ -15,21 +17,37 @@ router.get('/',(request, response) => {
 })
 router.post('/', async (request, response) => {
     const {name, email, password} = request.body;
-    const hashedPassword = hashedPassword(password,8);
+    const hashedPassword = await bcrypt.hash(password, 8);
+    console.log(hashedPassword);
     await userModel.create({name,email,password:hashedPassword})
     return response.status(201).json({message: "User created successfully"});
+})
+router.delete('/:id',async (request, response) => {
+    const {id}=request.params;
+    try {
+        const user = await userModel.findByPk(id)
+        if(user){
+            await user.destroy();
+            return response.status(201).json({message:"User deleted",user});
+        }else {
+            return response.status(404).json({message:"User not found"});
+        }
+    }catch (error) {
+        return response.status(500).json({message:"internal server error",error:error.message});
+    }
+
 })
 
 router.post('/login', async (request, response) => {
     const {email, password} = request.body;
-    const user = userModel.findOne({
+    const user = await userModel.findOne({
         where: {email: email},
     })
     if(user==null){
         response.status(404).json({error:"invalid email"});
     }
-    const check = await bcrypt.compare(password, user.password);
-    if(check===false){
+    const check =  await bcrypt.compare(password, user.password);
+    if(check){
         response.status(401).json({error: "Invalid password"});
     }
     const token = jwt.sign({name:user.name,email:user.email},'JadAtout')
