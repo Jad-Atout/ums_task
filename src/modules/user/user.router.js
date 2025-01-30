@@ -1,50 +1,68 @@
 import {response, Router} from "express";
 import userModel from "../../../db/model/user.model.js";
 import bcrypt from "bcrypt";
+import auth from "../../middleware/auth.js";
+import sendEmail from "../../utils/sendEmail.js";
+import cloudinary from "../../utils/cloudinary.js";
+import fileUpload from "../../utils/multer.js";
+import {loginSchema, registerSchema} from "../authentication/auth.validation.js";
 import jwt from "jsonwebtoken";
+import {addUser, deleteUser, getAllUsers} from "./user.controller.js";
 const router = Router();
 
-router.get('/',async (request, response) => {
-    let users = []
-    try {
-         users = await userModel.findAll({
-             attributes:['name','email']
-         })
-    }catch (error) {
-        response.status(500).json({error: error.message});
+router.get('/',getAllUsers)
+
+router.post('/', addUser)
+
+router.delete('/:id',auth(),deleteUser)
+
+
+
+
+router.post('/img',fileUpload().single('image'),async (request, response) => {
+    console.log(request.body)
+    if(request.image){
+        await cloudinary.upload(request.file.path)
+        return response.status(201).json({message:`File uploaded successfully`})
+
     }
-    return response.status(200).json({message:`success`,users})
+    return response.status(404).json({message:"Not Found"});
+
 })
-router.post('/', async (request, response) => {
-    const {name, email, password} = request.body;
-    const hashedPassword = await bcrypt.hash(password, 8);
-    console.log(hashedPassword);
-    await userModel.create({name,email,password:hashedPassword})
-    return response.status(201).json({message: "User created successfully"});
-})
-router.delete('/:id',async (request, response) => {
-    const {id}=request.params;
-    const{token} = request.headers;
 
-    const decodedToken = jwt.verify(token,'JadAtout');
-
-    if(decodedToken.role !== 'admin'){
-        return response.status(403).json({message:"Unauthorized"});
-    }
-
+router.post('/login', async (request, response) => {
     try {
-        const user = await userModel.findByPk(id)
-        if(user){
-            await user.destroy();
-            return response.status(201).json({message:"User deleted",user});
-        }else {
-            return response.status(404).json({message:"User not found"});
+        const { email, password } = request.body;
+
+        const result = loginSchema.validate({email:email, password:password},{abortEarly: false});
+        if (result.error) {
+            return response.status(400).json({ error: result.error });
         }
-    }catch (error) {
-        return response.status(500).json({message:"internal server error",error:error.message});
+
+        const user = await userModel.findOne({ where: { email } });
+        if (!user) {
+            return response.status(404).json({ error: "Invalid email" });
+        }
+
+        const isPasswordValid = await bcrypt.compare(password, user.password);
+        if (!isPasswordValid) {
+            return response.status(401).json({ error: "Invalid password" });
+        }
+
+
+        const token = jwt.sign(
+            { name: user.name, email: user.email,role:user.role,id:user.id },
+            'JadAtout'
+        );
+
+        return response.status(200).json({
+            message: "Successfully logged in",
+            token
+        });
+    } catch (error) {
+        console.error(error);
+        return response.status(500).json({ error: "Internal server error", details: error.message });
     }
-
-})
-
+});
 
 export default router;
